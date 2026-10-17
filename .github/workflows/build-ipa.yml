@@ -1,0 +1,91 @@
+name: build-ipa
+
+# macOS runner 编 dks333/Tiktok-Clone（已接本地视频库、Firebase 已移除），产未签名 ipa。
+# 触发：Actions 页面 Run workflow，或 push 到 main。
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 环境信息
+        run: |
+          xcodebuild -version
+          sw_vers
+          ruby -v || true
+
+      - name: 安装 CocoaPods
+        run: |
+          if ! command -v pod >/dev/null 2>&1; then
+            gem install cocoapods --no-document || sudo gem install cocoapods --no-document
+          fi
+          pod --version
+
+      - name: pod install
+        working-directory: KD Tiktok-Clone
+        run: |
+          pod install --repo-update || pod install
+          ls -la
+          ls -la Pods/Target\ Support\ Files/Pods-KD\ Tiktok-Clone/ | head -20
+
+      - name: 列出 scheme
+        working-directory: KD Tiktok-Clone
+        run: xcodebuild -list -workspace "KD Tiktok-Clone.xcworkspace"
+
+      - name: 编译（未签名）
+        working-directory: KD Tiktok-Clone
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -workspace "KD Tiktok-Clone.xcworkspace" \
+            -scheme "KD Tiktok-Clone" \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGN_ENTITLEMENTS="" \
+            build 2>&1 | tee build.log
+
+          APP="build/Build/Products/Release-iphoneos/KD Tiktok-Clone.app"
+          if [ ! -d "$APP" ]; then
+            echo "::error::没有产物，见 build.log 末尾"
+            tail -80 build.log
+            exit 1
+          fi
+          echo "产物 OK: $APP"
+
+      - name: 出错也把日志留下
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: KD Tiktok-Clone/build.log
+          retention-days: 7
+
+      - name: 打 ipa
+        working-directory: KD Tiktok-Clone
+        run: |
+          APP="build/Build/Products/Release-iphoneos/KD Tiktok-Clone.app"
+          mkdir -p ../out/Payload
+          cp -R "$APP" ../out/Payload/
+          cd ../out
+          zip -qry KD-Tiktok-Clone-unsigned.ipa Payload
+          ls -lh KD-Tiktok-Clone-unsigned.ipa
+
+      - name: 上传
+        uses: actions/upload-artifact@v4
+        with:
+          name: KD-Tiktok-Clone-unsigned-ipa
+          path: out/KD-Tiktok-Clone-unsigned.ipa
+          retention-days: 30

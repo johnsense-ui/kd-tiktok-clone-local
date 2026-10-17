@@ -1,0 +1,15 @@
+# 本地视频库版本：Firebase 全部移除，只留 UI/播放需要的库
+platform :ios, '13.0'
+
+target 'KD Tiktok-Clone' do
+  use_frameworks!
+
+  inhibit_all_warnings!
+
+  pod 'SnapKit', '~> 5.0'
+  pod 'RxSwift', '~> 5'
+  pod 'MarqueeLabel', '~> 4.0'
+  # 3.x 才有 AnimationView(name:)，4.x 改名 LottieAnimationView，别升
+  pod 'lottie-ios', '~> 3.5'
+
+end
