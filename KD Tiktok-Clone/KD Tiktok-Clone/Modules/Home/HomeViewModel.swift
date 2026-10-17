@@ -21,6 +21,9 @@ final class HomeViewModel: NSObject {
     /// 首次启动用这个；改过就记住
     static let defaultServerBase = "http://172.20.10.3:6688"
 
+    /// 局域网连不上时自动切这个（Tailscale，出门也能用）
+    static let fallbackServerBase = "http://100.78.220.84:6688"
+
     static var serverBase: String {
         get {
             let v = (UserDefaults.standard.string(forKey: "dzc.serverBase") ?? "")
@@ -47,6 +50,7 @@ final class HomeViewModel: NSObject {
     private var docs = [Post]()
     private var offset = 0
     private var total = Int.max
+    private var usedFallback = false
     private var isFetching = false
     private let pageSize = 20
     private let session: URLSession
@@ -111,6 +115,7 @@ final class HomeViewModel: NSObject {
                 self.isFetching = false
 
                 if let err = err {
+                    if self.switchToFallback() { return }
                     self.isLoading.onNext(false)
                     self.error.onNext(err)
                     return
@@ -118,6 +123,7 @@ final class HomeViewModel: NSObject {
 
                 guard let data = data,
                       let decoded = try? JSONDecoder().decode(LocalFeedResponse.self, from: data) else {
+                    if self.switchToFallback() { return }
                     self.isLoading.onNext(false)
                     self.error.onNext(LocalFeedError.badPayload)
                     return
@@ -134,6 +140,19 @@ final class HomeViewModel: NSObject {
                 self.isLoading.onNext(false)
             }
         }.resume()
+    }
+
+    /// 局域网连不上时，切到 Tailscale 地址再试一次；只切一次，避免死循环
+    @discardableResult
+    private func switchToFallback() -> Bool {
+        guard !usedFallback else { return false }
+        guard HomeViewModel.serverBase != HomeViewModel.fallbackServerBase else { return false }
+        usedFallback = true
+        HomeViewModel.serverBase = HomeViewModel.fallbackServerBase
+        print("[feed] 切到备用地址 \(HomeViewModel.fallbackServerBase)")
+        isFetching = false
+        getPosts(pageNumber: 1, size: pageSize)
+        return true
     }
 
     /// 服务端 JSON → 这个项目原来的 Post 模型
